@@ -1,3 +1,7 @@
+# added by prachi
+dummy_folder/
+results/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
