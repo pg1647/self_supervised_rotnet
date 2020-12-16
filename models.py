@@ -85,14 +85,14 @@ class RotNet(nn.Module):
         
 
 class ConvClassifier(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, out_classes):
         super(ConvClassifier, self).__init__()
         
         self.block = nn.Sequential(OrderedDict([
                 ('nin_block3', NIN_block(in_channels, 192, 192, 192, 3)),
                 ('glob_avg_pool', nn.AdaptiveAvgPool2d((1,1))),
                 ('flat', nn.Flatten()),
-                ('fc', nn.Linear(192, 10))]))
+                ('fc', nn.Linear(192, out_classes))]))
 
     def forward(self, x):
         x = self.block(x)
@@ -100,7 +100,7 @@ class ConvClassifier(nn.Module):
 
 
 class NonLinearClassifier(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, out_classes):
         super(NonLinearClassifier, self).__init__()
 
         self.block = nn.Sequential(OrderedDict([
@@ -113,7 +113,7 @@ class NonLinearClassifier(nn.Module):
                 ('fc2_bnorm', nn.BatchNorm1d(200)),
                 ('fc2_relu', nn.ReLU()),
                 #####
-                ('fc3', nn.Linear(200, 10))]))
+                ('fc3', nn.Linear(200, out_classes))]))
 
     def forward(self, x):
         x = self.block(x)
