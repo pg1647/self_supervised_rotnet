@@ -22,9 +22,10 @@ from scipy.optimize import linear_sum_assignment
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 
-train_transform = transforms.Compose([transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor()])
+train_transform = transforms.Compose([transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor(), transforms.Normalize((125.3/255, 123.0/255, 113.9/255), (63.0/255, 62.1/255, 66.7/255))])
+test_transform = transforms.Compose([transforms.ToTensor(),transforms.Normalize((125.3/255, 123.0/255, 113.9/255), (63.0/255, 62.1/255, 66.7/255))])
 
-class MyDataset(Dataset):
+class MyTrainset(Dataset):
     def __init__(self):
         self.cifar10 = datasets.CIFAR10(root='.',download=True,train=True,transform=train_transform)
 
@@ -33,6 +34,20 @@ class MyDataset(Dataset):
 
         # Your transformations here (or set it in CIFAR10)
                                             
+        return data, target, index
+
+    def __len__(self):
+        return len(self.cifar10)
+
+class MyTestset(Dataset):
+    def __init__(self):
+        self.cifar10 = datasets.CIFAR10(root='.',download=True,train=False,transform=test_transform)
+
+    def __getitem__(self, index):
+        data, target = self.cifar10[index]
+
+        # Your transformations here (or set it in CIFAR10)
+
         return data, target, index
 
     def __len__(self):
@@ -86,12 +101,15 @@ def get_parser():
     parser.add_argument('--epochs_to_save', nargs="+", type=int, default=[100],
                         help='List of epochs to save (default: [100])')
 
+    parser.add_argument('--d', type=int, default=10,
+                        help='d size (default: [10])')
+
     return parser 
 
 parser = get_parser()
 args = parser.parse_args()
 
-out_size = 10
+out_size = args.d
 device = args.device
 
 c = torch.from_numpy(np.random.normal(0, 1, [50000, out_size]).astype(np.float32)).to(device)
@@ -143,10 +161,12 @@ def test(args, network, test_loader, mult, datatype):
     network.eval()
     test_loss = 0
     correct = 0
-    for data,target in test_loader:
-        data, target = data.to(args.device), target.to(device)
+    for data,target, indx in test_loader:
+        data, target, indx = data.to(args.device), target.to(device), indx.to(device)
         output, _, _ = network(data)
-        test_loss += F.cross_entropy(output, target, reduction='sum').item() # sum up batch loss
+        y = c[p[indx]].reshape(-1,out_size).to(device)
+        tloss = torch.nn.MSELoss()
+        test_loss += tloss(output, y).item() # sum up batch loss
         pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
         correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -170,10 +190,11 @@ def main(args):
     ####################
 
     #train_transform = transforms.Compose([transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip(), transforms.ToTensor()])
-    test_transform = transforms.ToTensor()
+    #test_transform = transforms.ToTensor()
         
-    trainset = MyDataset()
-    testset = datasets.CIFAR10(root='.', train=False, download=True, transform=test_transform)
+    trainset = MyTrainset()
+    testset = MyTestset()
+    #testset = datasets.CIFAR10(root='.', train=False, download=True, transform=test_transform)
 
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=0)
     test_loader  = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=False, num_workers=0)
@@ -211,7 +232,7 @@ def main(args):
     for epoch in range(args.epochs):
         train(args, network, train_loader, optimizer, mult, scheduler, epoch)
         
-        train_loss, train_acc = test(args, network, test_loader, mult, 'Train')
+        train_loss, train_acc = test(args, network, train_loader, mult, 'Train')
         results_dict['train_loss_hist'].append(train_loss)
         results_dict['train_acc_hist'].append(train_acc)
         

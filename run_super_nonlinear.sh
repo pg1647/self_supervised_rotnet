@@ -2,12 +2,12 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
-#SBATCH --time=01:00:00
+#SBATCH --time=07:00:00
 #SBATCH --mem=32GB
 #SBATCH --gres=gpu:1
 ##SBATCH --partition=gpu
-#SBATCH --job-name=nonlinfinetuned
-#SBATCH --output=results/slurm_files/slurm_rotnet_nonlinear_%j.out
+#SBATCH --job-name=supernonlinear
+#SBATCH --output=results/slurm_files/slurm_super_nonlinear_%j.out
 
 
 # when the job ends, send me an email at this email address.
@@ -27,4 +27,4 @@ source activate pytorchenv
 
 
 
-python rotnet_nonlinear.py --nins=$1 --batch_size=128 --epochs=100 --layer=$2 --rot_model_type='_best_acc'
+python super_nonlinear.py --nins=5 --batch_size=128 --epochs=200 --layer=$1 

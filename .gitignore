@@ -3,7 +3,9 @@ dummy_folder/
 results/
 cifar-10-batches-py/
 cifar-10-python.tar.gz
-*ipynb
+*.ipynb
+*slurm_rotnet_conv_14233635.out*
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

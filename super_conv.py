@@ -20,7 +20,7 @@ import math
 import shutil
 
 def get_parser():
-    parser = argparse.ArgumentParser(description='Conv Classifier on NatNet')
+    parser = argparse.ArgumentParser(description='Supervised Conv Classifier')
 
     parser.add_argument('--batch_size', type=int, default=128,
                         help='input batch size for training (default: 128)')
@@ -66,42 +66,40 @@ def get_parser():
     parser.add_argument('--rot_model_type', default='', type=str, 
                         help="Which rotation model to load. Options: '', '_best_acc', '_epoch_100' (default: '') ")
 
-    parser.add_argument('--load', type=int, default=10,
-                        help='Loads saved nat model of epoch number given (default: 10)')
     return parser 
 
-retnums = [1,2,3]
 
-outs = 10
-
-def train(args, rot_network, class_network, train_loader, optimizer, mult, scheduler, epoch, in_features):
+def train(args, rot_network, class_network, train_loader, rot_optimizer, class_optimizer, mult, rot_scheduler, class_scheduler, epoch, in_features):
+    rot_network.train()
     class_network.train()
     total_images_till_now = 0
     total_images = len(train_loader.dataset)*mult
     for batch_idx, (data, target) in enumerate(train_loader):
         data = data.to(args.device)
         target = target.to(args.device)
-        optimizer.zero_grad()
+        rot_optimizer.zero_grad()
+        class_optimizer.zero_grad()
         _, out_dict, layer_num2name_dict = rot_network(data, [args.layer])
         output = class_network(out_dict[layer_num2name_dict[args.layer]])
-        
-        #output, feats, numn = rot_network(data, retnums)
-        #output = class_network(feats[numn[retnums[2-1]]])
         loss = F.cross_entropy(output, target)
         loss.backward()
-        optimizer.step()
+        rot_optimizer.step()
+        class_optimizer.step()
         total_images_till_now = total_images_till_now + len(data)
         if batch_idx % args.print_after_batches == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch+1, total_images_till_now, total_images,
                 100. * total_images_till_now/total_images, loss.item()))
+                
 
-    scheduler.step()
+    rot_scheduler.step()
+    class_scheduler.step()
 
     return
 
 
 def test(args, rot_network, class_network, test_loader, mult, datatype, in_features):
+    rot_network.eval()
     class_network.eval()
     test_loss = 0
     correct = 0
@@ -132,7 +130,7 @@ def main(args):
         in_features = 96
     else:
         in_features = 192
-    rot_classes = outs
+    rot_classes = 4
     out_classes = 10 
     lr_decay_rate = 0.2 # lr is multiplied by decay rate after a milestone epoch is reached
     mult = 1 # data become mult times 
@@ -152,11 +150,14 @@ def main(args):
     class_network = mdl.ConvClassifier(in_channels=in_features, out_classes=out_classes).to(args.device)
 
     if args.opt == 'adam':
-        optimizer = optim.Adam(class_network.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        rot_optimizer = optim.Adam(rot_network.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        class_optimizer = optim.Adam(class_network.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     else:
-        optimizer = optim.SGD(class_network.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)  
+        rot_optimizer = optim.SGD(rot_network.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        class_optimizer = optim.SGD(class_network.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)  
 
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.milestones, gamma=lr_decay_rate)
+    rot_scheduler = optim.lr_scheduler.MultiStepLR(rot_optimizer, milestones=args.milestones, gamma=lr_decay_rate)
+    class_scheduler = optim.lr_scheduler.MultiStepLR(class_optimizer, milestones=args.milestones, gamma=lr_decay_rate)
 
     ####################################### Saving information
     results_dict = {}
@@ -176,22 +177,13 @@ def main(args):
     checkpoint_path = os.path.join(args.results_dir, 'model.pth')
     checkpoint_path_best_acc = os.path.join(args.results_dir, 'model_best_acc.pth')
 
-    # Setting rotation model weights and setting it in eval only model
-    rot_network_file = os.path.join('results/natnet_'+str(args.nins)+'_ninblocks'+args.suffix_rot, 'model'+args.rot_model_type+'.pth')
-    #rot_network_file = os.path.join('results/natnet_'+str(args.nins)+'_ninblocks_redo/model_epoch_'+str(args.load)+'.pth')
-    rot_model_dict = torch.load(rot_network_file)
-    rot_network.load_state_dict(rot_model_dict['model_state_dict'])
-
-    rot_network.eval()
-    for param in rot_network.parameters():
-        param.requires_grad = False
 
     #########
     test_acc_max = -math.inf
     loop_start_time = time.time()
     checkpoint = {}
     for epoch in range(args.epochs):
-        train(args, rot_network, class_network, train_loader, optimizer, mult, scheduler, epoch, in_features)
+        train(args, rot_network, class_network, train_loader, rot_optimizer, class_optimizer, mult, rot_scheduler, class_scheduler, epoch, in_features)
         
         train_loss, train_acc = test(args, rot_network, class_network, train_loader, mult, 'Train', in_features)
         results_dict['train_loss_hist'].append(train_loss)
@@ -202,8 +194,10 @@ def main(args):
         results_dict['test_acc_hist'].append(test_acc)
         print('Epoch {} finished --------------------------------------------------------------------------'.format(epoch+1))
         
-        checkpoint = {'model_state_dict': class_network.state_dict(), 
-                      'optimizer_state_dict': optimizer.state_dict(), 
+        checkpoint = {'class_model_state_dict': class_network.state_dict(), 
+                      'class_optimizer_state_dict': class_optimizer.state_dict(), 
+                      'rot_model_state_dict': rot_network.state_dict(), 
+                      'rot_optimizer_state_dict': rot_optimizer.state_dict(), 
                       'epoch':epoch+1,  
                       'train_loss':train_loss, 
                       'train_acc':train_acc, 
@@ -238,12 +232,9 @@ if __name__ == '__main__':
     parser = get_parser()
     args = parser.parse_args()
 
-    if args.suffix_rot == '_redo2':
-        outs = 32
-
     assert (args.layer >= 1 and args.layer <=5)
 
-    args.results_dir = os.path.join(args.results_dir, 'natnet_conv_classifier', 'nins_'+str(args.nins)+'_layer_'+str(args.layer)+args.suffix)
+    args.results_dir = os.path.join(args.results_dir, 'super_conv_classifier', 'nins_'+str(args.nins)+'_layer_'+str(args.layer)+args.suffix)
 
     assert (not os.path.exists(args.results_dir))
 

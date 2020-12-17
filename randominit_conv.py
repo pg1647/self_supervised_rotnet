@@ -20,7 +20,7 @@ import math
 import shutil
 
 def get_parser():
-    parser = argparse.ArgumentParser(description='Conv Classifier on NatNet')
+    parser = argparse.ArgumentParser(description='Randomly Initialized Rotnet Model with Conv Classifier')
 
     parser.add_argument('--batch_size', type=int, default=128,
                         help='input batch size for training (default: 128)')
@@ -66,13 +66,8 @@ def get_parser():
     parser.add_argument('--rot_model_type', default='', type=str, 
                         help="Which rotation model to load. Options: '', '_best_acc', '_epoch_100' (default: '') ")
 
-    parser.add_argument('--load', type=int, default=10,
-                        help='Loads saved nat model of epoch number given (default: 10)')
     return parser 
 
-retnums = [1,2,3]
-
-outs = 10
 
 def train(args, rot_network, class_network, train_loader, optimizer, mult, scheduler, epoch, in_features):
     class_network.train()
@@ -84,9 +79,6 @@ def train(args, rot_network, class_network, train_loader, optimizer, mult, sched
         optimizer.zero_grad()
         _, out_dict, layer_num2name_dict = rot_network(data, [args.layer])
         output = class_network(out_dict[layer_num2name_dict[args.layer]])
-        
-        #output, feats, numn = rot_network(data, retnums)
-        #output = class_network(feats[numn[retnums[2-1]]])
         loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
@@ -132,7 +124,7 @@ def main(args):
         in_features = 96
     else:
         in_features = 192
-    rot_classes = outs
+    rot_classes = 4
     out_classes = 10 
     lr_decay_rate = 0.2 # lr is multiplied by decay rate after a milestone epoch is reached
     mult = 1 # data become mult times 
@@ -176,11 +168,6 @@ def main(args):
     checkpoint_path = os.path.join(args.results_dir, 'model.pth')
     checkpoint_path_best_acc = os.path.join(args.results_dir, 'model_best_acc.pth')
 
-    # Setting rotation model weights and setting it in eval only model
-    rot_network_file = os.path.join('results/natnet_'+str(args.nins)+'_ninblocks'+args.suffix_rot, 'model'+args.rot_model_type+'.pth')
-    #rot_network_file = os.path.join('results/natnet_'+str(args.nins)+'_ninblocks_redo/model_epoch_'+str(args.load)+'.pth')
-    rot_model_dict = torch.load(rot_network_file)
-    rot_network.load_state_dict(rot_model_dict['model_state_dict'])
 
     rot_network.eval()
     for param in rot_network.parameters():
@@ -238,12 +225,9 @@ if __name__ == '__main__':
     parser = get_parser()
     args = parser.parse_args()
 
-    if args.suffix_rot == '_redo2':
-        outs = 32
-
     assert (args.layer >= 1 and args.layer <=5)
 
-    args.results_dir = os.path.join(args.results_dir, 'natnet_conv_classifier', 'nins_'+str(args.nins)+'_layer_'+str(args.layer)+args.suffix)
+    args.results_dir = os.path.join(args.results_dir, 'randominit_conv_classifier', 'nins_'+str(args.nins)+'_layer_'+str(args.layer)+args.suffix)
 
     assert (not os.path.exists(args.results_dir))
 
